@@ -6,12 +6,13 @@ from Crypto.Cipher import AES
 import base64
 import hashlib
 import argparse
+from pathlib import Path
+import time
 
 # argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--command", action="store_true", help="Print the final mpv command and exit")
 args = parser.parse_args()
-
 
 # --- Configuration & Caching (Global Scope) ---
 BASE_URL = "https://hianime.to"
@@ -25,6 +26,10 @@ SUBTITLE_BASE_DIR = "F:/Subtitle" # Your specified directory
 JIMAKU_API_KEY = os.getenv("JIMAKU_API_KEY")
 JIMAKU_HEADERS = {"Authorization": JIMAKU_API_KEY}
 JIMAKU_BASE_URL = "https://jimaku.cc"
+SCRIPT_DIR = Path(__file__).resolve().parent
+TEMP_DIR = SCRIPT_DIR / "temp_subs"
+TEMP_DIR.mkdir(exist_ok=True)
+CLEANUP_SPAN = 24 * 60 * 60
 
 # --- Helper Functions ---
 def get_keys_from_repo():
@@ -207,11 +212,40 @@ def download_jimaku_sub(file_data, series_title):
         return filepath
     except Exception as e: print(f"❌ [Jimaku] Download failed: {e}"); return None
     
+def download_and_convert_sub(url, name="sub"):
+    ts = int(time.time())
+    vtt_path = TEMP_DIR / f"{name}_{ts}.vtt"
+    srt_path = TEMP_DIR / f"{name}_{ts}.srt"
+
+    # download subtitle
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        with open(vtt_path, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+
+    # convert to srt with ffmpeg
+    subprocess.run([
+        "ffmpeg", "-loglevel", "error", "-i", str(vtt_path), str(srt_path)
+    ], check=True)
+
+    return srt_path
+
+def cleanup_old_subs():
+    now = time.time()
+    for f in TEMP_DIR.glob("*.srt"):
+        if now - f.stat().st_mtime > CLEANUP_SPAN:
+            f.unlink()
+    for f in TEMP_DIR.glob("*.vtt"):
+        if now - f.stat().st_mtime > CLEANUP_SPAN:
+            f.unlink()
+            
 # --- Main Application ---
 def main():
     if not JIMAKU_API_KEY:
         print("⚠️ WARNING: JIMAKU_API_KEY environment variable not set. Jimaku search will be unavailable.")
     pins = load_file(PINS_FILE); history = load_file(HISTORY_FILE)
+    cleanup_old_subs
     while True:
         print("\n" + "#"*20 + " MAIN MENU " + "#"*20)
         bookmarks = []
@@ -368,7 +402,9 @@ def main():
                     stream_subs = [track for track in stream_data.get("tracks", []) if track.get("kind") != "thumbnails"]
                     for sub in stream_subs:
                         if sub.get('file') and 'english' in sub.get('label', '').lower():
-                            mpv_command.append(f"--sub-file={sub.get('file')}")
+                            # mpv_command.append(f"--sub-file={sub.get('file')}")
+                            srt_converted = download_and_convert_sub(sub.get('file'))
+                            mpv_command.append(f"--sub-file={srt_converted}")
                             loaded_subs.append(f"{sub.get('label')} (Stream)")
                 
                     if loaded_subs:
