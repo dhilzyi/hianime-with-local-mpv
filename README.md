@@ -2,7 +2,7 @@
 ![Python](https://img.shields.io/badge/python-3.12-green)
 
 ## Description
-A CLI Python tool for streaming anime from hianime.to using your local MPV player. Supports custom subtitle imports via Jimaku API—perfect for anime fans wanting a lightweight hianime MPV extension with multi-language subs and history tracking.
+A CLI Python tool for streaming anime from hianime.to using your local MPV player. Supports custom subtitle imports via Jimaku API—perfect for people wanting a lightweight hianime MPV extension with Japanese subs and history tracking.
 
 ## Introduction
 This code was mostly written with AI assistance. I just gave the idea for what to build, then handled some code tweaks and cleanup. It's great for people who want to importing subtitles in other languages and using MPV extensions for hianime.
@@ -36,6 +36,7 @@ Pair this tool with these for an even better experience:
 ```bash
 python hianime.py
 ```
+Use `python hianime.py --command` as you can print the raw mpv command for debugging such as using another command mpv.
 - Paste an anime URL (e.g., https://hianime.to/watch/one-piece-100).
 - Select options like episode, or 'p' to pin to series.
 - Choose servers manually or automatically.
