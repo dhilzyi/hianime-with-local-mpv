@@ -5,7 +5,7 @@
 A CLI Python tool for streaming anime from hianime.to using your local MPV player. Supports custom subtitle imports via Jimaku API—perfect for anime fans wanting a lightweight hianime MPV extension with multi-language subs and history tracking.
 
 ## Introduction
-This code was mostly written with AI assistance. I just gave the idea for what to build, then handled some code tweaks and cleanup. It's great for importing subtitles in other languages and using MPV extensions for hianime.
+This code was mostly written with AI assistance. I just gave the idea for what to build, then handled some code tweaks and cleanup. It's great for people who want to importing subtitles in other languages and using MPV extensions for hianime.
 
 https://github.com/user-attachments/assets/f8ba7d32-9c6e-48d4-a386-70eb991b6da1
 
@@ -20,7 +20,7 @@ https://github.com/user-attachments/assets/f8ba7d32-9c6e-48d4-a386-70eb991b6da1
 
 ## Enhancements
 Pair this tool with these for an even better experience:
-- For automatic subtitle syncing with the English subs from hianime.to, check out [AutoSubSync-MPV](https://github.com/joaquintorres/autosubsync-mpv). It handles timing offsets like a pro.
+- For automatic subtitle syncing with the English subs from hianime.to, check out [AutoSubSync-MPV](https://github.com/joaquintorres/autosubsync-mpv). It handles unsync subs automatically.
 
 ## Requirements
 - Python 3.12+
@@ -36,11 +36,12 @@ Pair this tool with these for an even better experience:
 ```bash
 python hianime.py
 ```
-- Set your 
 - Paste an anime URL (e.g., https://hianime.to/watch/one-piece-100).
 - Select options like episode, or 'p' to pin to series.
 - Choose servers manually or automatically.
-- Enable Jimaku in config.json by setting "jimaku_enabled": true.
+- Set your directory for downloaded subtitle in variable SUBTITLE_BASE_DIR. It is "F:/Subtitle" as a default.
+- Set your JIMAKU_API_KEY in environment variables.
+- Turn on/off Jimaku in config.json by setting "jimaku_enabled": true. or false.
 
 ## Troubleshooting
 - Jimaku API issues: Get your key from jimaku.cc and add it to environment variables (e.g., export JIMAKU_API_KEY=yourkey) or paste directly in the code.
