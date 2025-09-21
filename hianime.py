@@ -1,4 +1,3 @@
-# FILE: main.py (The Final, Definitive, and Perfected Application)
 import requests, re, json, subprocess, time, html, os
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
@@ -6,12 +5,13 @@ from Crypto.Cipher import AES
 import base64
 import hashlib
 import argparse
+from pathlib import Path
+from datetime import datetime
 
-# argparse
+# --- Argparse ---
 parser = argparse.ArgumentParser()
 parser.add_argument("--command", action="store_true", help="Print the final mpv command and exit")
 args = parser.parse_args()
-
 
 # --- Configuration & Caching (Global Scope) ---
 BASE_URL = "https://hianime.to"
@@ -25,7 +25,54 @@ SUBTITLE_BASE_DIR = "F:/Subtitle" # Your specified directory
 JIMAKU_API_KEY = os.getenv("JIMAKU_API_KEY")
 JIMAKU_HEADERS = {"Authorization": JIMAKU_API_KEY}
 JIMAKU_BASE_URL = "https://jimaku.cc"
+SCRIPT_DIR = Path(__file__).resolve().parent
+TEMP_DIR = SCRIPT_DIR / "temp_subs"
+TEMP_DIR.mkdir(exist_ok=True)
+CLEANUP_SPAN = 24 * 60 * 60
 
+# --- Opening config.json ---
+CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config = json.load(f)
+
+# --- History function and Pin Function ---
+def load_file(filepath):
+    if not os.path.exists(filepath): return []
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f: return json.load(f)
+    except (json.JSONDecodeError, IOError): return []
+def save_file(data, filepath):
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f: json.dump(data, f, indent=2, ensure_ascii=False)
+    except IOError: print(f"Warning: Could not save {filepath}.")
+def update_history(history, metadata, series_url):
+    history = [item for item in history if item['url'] != series_url]
+    history.insert(0, {'url': series_url, 'english_title': metadata['english_title'], 'japanese_title': metadata['japanese_title']})
+    return history[:HISTORY_LIMIT]
+def add_pin(pins, item_to_pin):
+    if any(p['url'] == item_to_pin['url'] for p in pins):
+        print("--> This series is already pinned."); return pins
+    pins.insert(0, item_to_pin); save_file(pins, PINS_FILE)
+    display_title = item_to_pin.get('japanese_title') or item_to_pin.get('english_title')
+    print(f"--> Pinned '{display_title}'."); return pins
+def manage_pins(pins):
+    if not pins: print("\nYou have no pinned series to manage."); time.sleep(2); return pins
+    while True:
+        print("\n--- Manage Pinned Series ---")
+        for i, item in enumerate(pins, 1):
+            display_title = item.get('japanese_title') or item.get('english_title') or "Unknown Title"
+            print(f"  [{i}] {display_title}")
+        print("\nEnter a number to unpin, or 'q' to return to the main menu.")
+        choice_str = input("Your choice: ")
+        if choice_str.lower() in ['q', 'quit', 'back']: return pins
+        try:
+            choice = int(choice_str)
+            if 1 <= choice <= len(pins):
+                removed = pins.pop(choice - 1); save_file(pins, PINS_FILE)
+                print(f"--> Unpinned '{removed.get('japanese_title') or removed.get('english_title')}'.")
+            else: print("Invalid number.")
+        except ValueError: print("Invalid input.")
+        
 # --- Helper Functions ---
 def get_keys_from_repo():
     if CACHE['keys']: return CACHE['keys']
@@ -69,45 +116,9 @@ def extract_megacloud(iframe_url):
         else: raise ValueError("Server did not return a valid 'sources' payload.")
     except Exception: return None
 
-def load_file(filepath):
-    if not os.path.exists(filepath): return []
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f: return json.load(f)
-    except (json.JSONDecodeError, IOError): return []
-def save_file(data, filepath):
-    try:
-        with open(filepath, 'w', encoding='utf-8') as f: json.dump(data, f, indent=2, ensure_ascii=False)
-    except IOError: print(f"⚠️ Warning: Could not save {filepath}.")
-def update_history(history, metadata, series_url):
-    history = [item for item in history if item['url'] != series_url]
-    history.insert(0, {'url': series_url, 'english_title': metadata['english_title'], 'japanese_title': metadata['japanese_title']})
-    return history[:HISTORY_LIMIT]
-def add_pin(pins, item_to_pin):
-    if any(p['url'] == item_to_pin['url'] for p in pins):
-        print("--> This series is already pinned."); return pins
-    pins.insert(0, item_to_pin); save_file(pins, PINS_FILE)
-    display_title = item_to_pin.get('japanese_title') or item_to_pin.get('english_title')
-    print(f"--> ✅ Pinned '{display_title}'."); return pins
-def manage_pins(pins):
-    if not pins: print("\nYou have no pinned series to manage."); time.sleep(2); return pins
-    while True:
-        print("\n--- Manage Pinned Series ---")
-        for i, item in enumerate(pins, 1):
-            display_title = item.get('japanese_title') or item.get('english_title') or "Unknown Title"
-            print(f"  [{i}] {display_title}")
-        print("\nEnter a number to unpin, or 'q' to return to the main menu.")
-        choice_str = input("Your choice: ")
-        if choice_str.lower() in ['q', 'quit', 'back']: return pins
-        try:
-            choice = int(choice_str)
-            if 1 <= choice <= len(pins):
-                removed = pins.pop(choice - 1); save_file(pins, PINS_FILE)
-                print(f"--> Unpinned '{removed.get('japanese_title') or removed.get('english_title')}'.")
-            else: print("Invalid number.")
-        except ValueError: print("Invalid input.")
 def get_series_metadata(series_url, history):
     if series_url in CACHE['titles']: return CACHE['titles'][series_url], history
-    print(f"[Phase 1] Fetching series metadata from: {series_url}");
+    print(f"--> Fetching series metadata from: {series_url}");
     try:
         response = SESSION.get(series_url, timeout=REQUEST_TIMEOUT); soup = BeautifulSoup(response.text, 'html.parser')
         target_link = soup.select_one("h2.film-name a.dynamic-name")
@@ -119,7 +130,7 @@ def get_series_metadata(series_url, history):
         metadata = {'english_title': english, 'japanese_title': japanese}; CACHE['titles'][series_url] = metadata
         new_history = update_history(history, metadata, series_url); save_file(new_history, HISTORY_FILE)
         return metadata, new_history
-    except Exception as e: print(f"⚠️ An error occurred in Phase 1: {e}"); return None, history
+    except Exception as e: print(f"An error occurred in fetching series: {e}"); return None, history
 def get_all_episodes(series_url):
     if series_url in CACHE['episodes']: return CACHE['episodes'][series_url]
     try:
@@ -142,6 +153,8 @@ def get_episode_servers(episode_id):
             servers.append({"id": div.get("data-id"), "name": final_name})
         CACHE['servers'][episode_id] = servers; return servers
     except Exception: return []
+
+# --- Testing the server if the server is not offline ---
 def launch_and_monitor_mpv(mpv_command_list):
     print("\n--- LAUNCHING VIDEO ---"); print("--> Monitoring stream viability (20 second timeout)...")
     try:
@@ -149,7 +162,7 @@ def launch_and_monitor_mpv(mpv_command_list):
             start_time = time.time()
             for line in iter(process.stdout.readline, ''):
                 if "(+) Video --vid=1" in line:
-                    print("--> ✅ Stream is valid. Handing over control to player."); process.stdout.close(); process.wait(); return True
+                    print("--> Stream is valid. Handing over control to player."); process.stdout.close(); process.wait(); return True
                 if "Opening failed" in line or "HTTP error" in line:
                     print("--> ❕ Dead stream detected by MPV. Terminating."); process.terminate(); return False
                 if time.time() - start_time > 20:
@@ -157,16 +170,15 @@ def launch_and_monitor_mpv(mpv_command_list):
             print("--> ❕ MPV exited prematurely."); return False
     except Exception as e: print(f"--> ⚠️ An unexpected error occurred in the watchdog: {e}"); return False
 
-# --- THE DEFINITIVE JIMAKU MODULE (Built from YOUR working script, with URL fix) ---
+# --- JIMAKU MODULE/API ---
 def search_jimaku(query):
-    print(f"\n[Jimaku] Searching for '{query}'...")
-    if not JIMAKU_API_KEY: print("--> ❕ JIMAKU_API_KEY not set. Skipping search."); return None
+    print(f"\n--> [Jimaku] Searching for '{query}'...")
+    if not JIMAKU_API_KEY: print("--> JIMAKU_API_KEY not set. Skipping search."); return None
     try:
         response = SESSION.get(f"{JIMAKU_BASE_URL}/api/entries/search", headers=JIMAKU_HEADERS, params={"query": query, "anime": "true"}, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
-    except Exception as e: print(f"❌ [Jimaku] Search failed: {e}"); return None
-
+    except Exception as e: print(f"--> [Jimaku] Search failed: {e}"); return None
 def get_jimaku_files(entry_id):
     print(f"--> [Jimaku] Fetching file list for entry ID: {entry_id}")
     if not JIMAKU_API_KEY: return []
@@ -175,17 +187,13 @@ def get_jimaku_files(entry_id):
         response.raise_for_status()
         return response.json()
     except Exception: return []
-
 def extract_episode_num(filename):
     patterns = [re.compile(r"[._\-\s](\d{1,3})[._\-\s]"), re.compile(r"EP(\d{1,3})", re.I), re.compile(r"E(\d{1,3})", re.I), re.compile(r"\[(\d{1,3})\]")]
     for pat in patterns:
         m = pat.search(filename)
         if m: return int(m.group(1))
     return 0
-
 def download_jimaku_sub(file_data, series_title):
-    # --- THE FINAL URL FIX IS HERE ---
-    # The URL from the API is an absolute path. We use it directly.
     url = file_data['url']
     filename = file_data['name']
     
@@ -200,32 +208,70 @@ def download_jimaku_sub(file_data, series_title):
 
     print(f"--> [Jimaku] Downloading '{filename}'...")
     try:
-        # We use a clean session for the download, without the API key
         response = requests.get(url, headers=HEADERS, timeout=30); response.raise_for_status()
         with open(filepath, 'wb') as f: f.write(response.content)
-        print(f"--> [Jimaku] ✅ Success! Saved to '{filepath}'.")
+        print(f"--> [Jimaku] Success! Saved to '{filepath}'.")
         return filepath
-    except Exception as e: print(f"❌ [Jimaku] Download failed: {e}"); return None
+    except Exception as e: print(f"--> [Jimaku] Download failed: {e}"); return None
     
+# --- Downloading subs english.vtt from megacloud and Converting to srt as a temp ---
+def download_and_convert_sub(url, name="sub"):
+    today = datetime.today()
+    vtt_path = TEMP_DIR / f"{name}_{today.year}-{today.month}-{today.day}_{today.hour}-{today.minute}-{today.second}.vtt"
+    srt_path = TEMP_DIR / f"{name}_{today.year}-{today.month}-{today.day}_{today.hour}-{today.minute}-{today.second}.srt"
+
+    # download subtitle
+    with requests.get(url, stream=True) as r:
+        r.raise_for_status()
+        with open(vtt_path, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+
+    # convert to srt with ffmpeg
+    subprocess.run([
+        "ffmpeg", "-loglevel", "error", "-i", str(vtt_path), str(srt_path)
+    ], check=True)
+
+    return srt_path
+
+# --- Deleating subs files in temp folder ---
+def cleanup_old_subs():
+    now = time.time()
+    for f in TEMP_DIR.glob("*.srt"):
+        if now - f.stat().st_mtime > CLEANUP_SPAN:
+            f.unlink()
+    for f in TEMP_DIR.glob("*.vtt"):
+        if now - f.stat().st_mtime > CLEANUP_SPAN:
+            f.unlink()
+            
 # --- Main Application ---
 def main():
     if not JIMAKU_API_KEY:
-        print("⚠️ WARNING: JIMAKU_API_KEY environment variable not set. Jimaku search will be unavailable.")
+        print("--> [WARNING]: JIMAKU_API_KEY environment variable not set. Jimaku search will be unavailable.")
     pins = load_file(PINS_FILE); history = load_file(HISTORY_FILE)
+    cleanup_old_subs()
     while True:
+        # Making list recent history and pinned series
         print("\n" + "#"*20 + " MAIN MENU " + "#"*20)
         bookmarks = []
         if pins:
-            print("--- ⭐ Pinned Series ---");
+            print("--- Pinned Series ---");
             for i, item in enumerate(pins, 1):
                 display_title = item.get('japanese_title') or item.get('english_title') or "Unknown Title"
                 print(f"  [{i}] {display_title}"); bookmarks.append(item)
             print("-" * 20)
         unpinned_history = [item for item in history if not any(p['url'] == item['url'] for p in pins)]
         if unpinned_history:
-            print("--- 🕒 Recent History ---");
+            print("--- Recent History ---")
+            
+            seen = set()
             for i, item in enumerate(unpinned_history, 1):
                 display_title = item.get('japanese_title') or item.get('english_title') or "Unknown Title"
+
+                if display_title in seen:
+                    continue
+                seen.add(display_title)
+                
                 print(f"  [{len(pins) + i}] {display_title}"); bookmarks.append(item)
             print("-" * 20)
         print("Paste a URL, enter a number to select, 'pin [num]' to pin, 'manage' to unpin, or 'q' to quit.")
@@ -259,6 +305,7 @@ def main():
         episodes = get_all_episodes(series_url)
         if not episodes: print("\nCould not retrieve episode list."); continue
 
+        # Main cli logic
         while True:
             print("\n" + "="*50); series_display_title = metadata['japanese_title'] or metadata['english_title']; print(f"--- Series: {series_display_title} ---")
             for ep in episodes: ep_display_title = ep['japanese_title'] or ep['english_title']; print(f"  [{ep['num']}] {ep_display_title}")
@@ -277,7 +324,6 @@ def main():
 
             print("\n--- Available Servers ---")
             for i, server in enumerate(servers, 1):
-                # Corrected numbering
                 print(f"  [{i}] {server['name']}")
             
             server_choice_str = input("\nEnter server number (or press Enter for auto-select): ").strip()
@@ -290,7 +336,6 @@ def main():
                 try:
                     choice = int(server_choice_str)
                     if 1 <= choice <= len(servers):
-                        # The logic now correctly honors the user's choice
                         servers_to_try = [servers[choice - 1]]
                     else:
                         print("Invalid server number. Returning to episode list.")
@@ -299,12 +344,13 @@ def main():
                     print("Invalid input. Returning to episode list.")
                     continue
                     
+            # Server logic
             stream_found = False
-            for server in servers_to_try: # This now correctly iterates over the chosen server(s)
-                print(f"\n[Phase 3] Selecting server '{server['name']}'...")
+            for server in servers_to_try:
+                print(f"\n--> Selecting server '{server['name']}'...")
                 stream_data = None; max_retries = 3
                 for attempt in range(max_retries):
-                    print(f"  -> Extractor Attempt {attempt + 1}/{max_retries}...")
+                    print(f"--> Extractor Attempt {attempt + 1}/{max_retries}...")
                     api_url = f"{BASE_URL}/ajax/v2/episode/sources?id={server['id']}"
                     try:
                         data = requests.get(api_url, headers=HEADERS, timeout=REQUEST_TIMEOUT).json()
@@ -314,7 +360,7 @@ def main():
                             if stream_data_candidate:
                                 stream_data = stream_data_candidate; break
                     except Exception: pass
-                    if attempt < max_retries - 1: print("  -> ❕ Extractor failed. Waiting 2 seconds..."); time.sleep(2)
+                    if attempt < max_retries - 1: print("--> Extractor failed. Waiting 2 seconds..."); time.sleep(2)
                 
                 if stream_data:
                     stream_data['server_name'] = server['name']
@@ -325,42 +371,60 @@ def main():
                     
                     # Load Jimaku (Japanese) subs FIRST so they become the earlier tracks (default display)
                     has_jimaku = False
-                    if JIMAKU_API_KEY:
-                        jimaku_choice = input("\nSearch for Japanese subtitles on Jimaku.cc? (y/n): ").strip().lower()
-                        if jimaku_choice in ['y', 'yes']:
-                            search_query = metadata['japanese_title'] or metadata['english_title']
-                            jimaku_results = search_jimaku(search_query)
-                            
-                            if jimaku_results:
+                    if JIMAKU_API_KEY and config.get("enable_jimaku", True):
+                        print("--> [Jimaku] Enabled. Proceeding...")
+                        search_query = metadata['japanese_title'] or metadata['english_title']
+                        jimaku_results = search_jimaku(search_query)
+                        
+                        if not jimaku_results:
+                            print("--> [Jimaku] No results found on Jimaku.cc for this series.")
+                        else:
+                            if len(jimaku_results) == 1:
+                                chosen_jimaku_anime = jimaku_results[0]
+                                print(f"--> [Jimaku] One result found: {chosen_jimaku_anime['name']}")
+                            elif any(r['name'] == series_display_title for r in jimaku_results):
+                                # Multiple results but exact title match → pick that
+                                chosen_jimaku_anime = next(r for r in jimaku_results if r['name'] == series_display_title)
+                                print(f"--> [Jimaku] Exact title match found: {chosen_jimaku_anime['name']}")
+                            else:
                                 print("\n--- Jimaku.cc Search Results ---")
                                 for i, anime in enumerate(jimaku_results, 1):
                                     print(f"  [{i}] {anime.get('name')}")
                                 try:
                                     jimaku_choice_num = int(input("\nEnter the number of the correct anime (or 0 to skip): "))
-                                    if 0 < jimaku_choice_num <= len(jimaku_results):
+                                    if jimaku_choice_num == 0:
+                                        print("--> Skipping jimaku search.")
+                                        chosen_jimaku_anime = None
+                                    elif 0 < jimaku_choice_num <= len(jimaku_results):
                                         chosen_jimaku_anime = jimaku_results[jimaku_choice_num - 1]
-                                        files = get_jimaku_files(chosen_jimaku_anime['id'])
-                                        
-                                        # Filter files: Prefer .ass (styled) over .srt to avoid duplicates
-                                        files_to_download = [f for f in files if extract_episode_num(f['name']) == chosen_ep['num']]
-                                        ass_files = [f for f in files_to_download if f['name'].lower().endswith('.ass')]
-                                        srt_files = [f for f in files_to_download if f['name'].lower().endswith('.srt')]
-                                        preferred_files = ass_files if ass_files else srt_files
-                                        
-                                        if preferred_files:
-                                            print(f"--> [Jimaku] Found {len(preferred_files)} preferred subtitle file(s) for episode {chosen_ep['num']} (preferring .ass).")
-                                            for file_data in preferred_files:
-                                                local_path = download_jimaku_sub(file_data, chosen_jimaku_anime['name'])
-                                                if local_path:
-                                                    mpv_command.append(f'--sub-file={local_path}')
-                                                    has_jimaku = True
-                                        else:
-                                            print(f"--> [Jimaku] No files found for episode {chosen_ep['num']}.")
-                                            print(files)
-                                    else: print("--> Skipping Jimaku search.")
+                                    else:
+                                        print("--> Invalid selection. Skipping Jimaku search.")
+                                        chosen_jimaku_anime = None
                                 except (ValueError, IndexError): print("--> Invalid selection. Skipping Jimaku search.")
-                            else:
-                                print("--> No results found on Jimaku.cc for this series.")
+                            
+                            # Filter files: Prefer .ass (styled) over .srt to avoid duplicates
+                            if chosen_jimaku_anime:
+                                files = get_jimaku_files(chosen_jimaku_anime['id'])
+                                    
+                                files_to_download = [f for f in files if extract_episode_num(f['name']) == chosen_ep['num']]
+                                ass_files = [f for f in files_to_download if f['name'].lower().endswith('.ass')]
+                                srt_files = [f for f in files_to_download if f['name'].lower().endswith('.srt')]
+                                preferred_files = ass_files if ass_files else srt_files
+                                
+                                if preferred_files:
+                                    print(f"--> [Jimaku] Found {len(preferred_files)} preferred subtitle file(s) for episode {chosen_ep['num']} (preferring .ass).")
+                                    for file_data in preferred_files:
+                                        local_path = download_jimaku_sub(file_data, chosen_jimaku_anime['name'])
+                                        if local_path:
+                                            mpv_command.append(f'--sub-file={local_path}')
+                                            has_jimaku = True
+                                else:
+                                    print(f"--> [Jimaku] No files found for episode {chosen_ep['num']}.")
+                    elif not config.get("enable_jimaku", True):
+                        print("-->[Config] enable_jimaku set to 'False'")
+                        print("-->[Jimaku] Skipping Jimaku api...")
+                    else:
+                        print("--> [Jimaku] Skipping. No Jimaku API KEY found in environment variable")
                     if has_jimaku and "Japanese (Jimaku)" not in loaded_subs:
                         loaded_subs.append("Japanese (Jimaku)")
                     
@@ -368,27 +432,27 @@ def main():
                     stream_subs = [track for track in stream_data.get("tracks", []) if track.get("kind") != "thumbnails"]
                     for sub in stream_subs:
                         if sub.get('file') and 'english' in sub.get('label', '').lower():
-                            mpv_command.append(f"--sub-file={sub.get('file')}")
+                            srt_converted = download_and_convert_sub(sub.get('file'))
+                            mpv_command.append(f"--sub-file={srt_converted}")
                             loaded_subs.append(f"{sub.get('label')} (Stream)")
                 
                     if loaded_subs:
                         print(f"\n--> Loading subtitles: {', '.join(loaded_subs)}")
                     if args.command:
-                        # Join with spaces so it looks like a real CLI command
                         print(" ".join(mpv_command))
                     if launch_and_monitor_mpv(mpv_command):
                         stream_found = True; break
                     else:
-                        print(f"--> ❌ Stream from '{server['name']}' failed viability test. Trying next server...")
+                        print(f"--> Stream from '{server['name']}' failed viability test. Trying next server...")
             
             if stream_found:
                 print("--- Player closed. ---")
             else:
-                print("\n\n--- MISSION FAILED ---"); print("Could not acquire a working stream from any available server.")
+                print("\n\n---FAILED TO FIND SERVER---"); print("--> Could not acquire a working stream from any available server.")
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n[INFO] Operator interrupt detected. Shutting down gracefully.")
+        print("\n\n--> Operator interrupt detected. Shutting down.")
         exit()
