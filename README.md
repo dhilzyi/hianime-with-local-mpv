@@ -1,8 +1,11 @@
-# Hianime with Local MPV: CLI Anime Streamer for MPV & Custom Subs
+# Hianime with Local MPV
 ![Python](https://img.shields.io/badge/python-3.12-green)
 
 ## Description
 A CLI Python tool for streaming anime from hianime.to—the standout site for its superior soft-subbed episodes—straight into your local MPV player. Unlike other anime platforms, hianime's baked-in subs are top-tier, but this lets you override them with your own, especially pristine Japanese originals fetched via the Jimaku API. Perfect for people wants a lightweight hianime MPV extension with series pinning, history tracking, and seamless multi-language subtitle swaps.
+
+## Disclaimer
+This tool is for educational and personal use only. It demonstrates web scraping and media integration techniques—use responsibly, respect site terms of service, and be mindful of copyrights. I'm not affiliated with any third-party sites or services.
 
 ## Introduction
 This code was mostly written with AI assistance. I just gave the idea for what to build, then handled some code tweaks and cleanup. It's great for people who want to importing subtitles in other languages and using MPV extensions for hianime.
