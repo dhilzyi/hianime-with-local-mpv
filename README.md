@@ -2,7 +2,7 @@
 ![Python](https://img.shields.io/badge/python-3.12-green)
 
 ## Description
-A CLI Python tool for streaming anime from hianime.to—the standout site for its superior soft-subbed episodes—straight into your local MPV player. Unlike other anime platforms, hianime's baked-in subs are top-tier, but this lets you override them with your own, especially people want to use Japanese originals fetched via the Jimaku API. Perfect for people wants a lightweight hianime MPV extension with series pinning, history tracking, and seamless multi-language subtitle swaps.
+A CLI Python tool for streaming anime from hianime.to—the standout site for its superior soft-subbed episodes—straight into your local MPV player. Unlike other anime platforms, this lets you override them with your own, especially people want to use Japanese originals sub fetched via the Jimaku API. Perfect for people wants a lightweight hianime MPV extension with series pinning, history tracking, and seamless multi-language subtitle swaps.
 
 ## Disclaimer
 This tool is for educational and personal use only. It demonstrates web scraping and media integration techniques—use responsibly, respect site terms of service, and be mindful of copyrights. I'm not affiliated with any third-party sites or services.
@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/f8ba7d32-9c6e-48d4-a386-70eb991b6da1
 
 ## Enhancements
 Pair this tool with these for an even better experience:
-- For automatic subtitle syncing with the English subs from hianime.to, check out [AutoSubSync-MPV](https://github.com/joaquintorres/autosubsync-mpv). It handles unsync subs automatically. Select to Sync to another subtitle
+- For automatic subtitle syncing with the English subs from hianime.to, check out [AutoSubSync-MPV](https://github.com/joaquintorres/autosubsync-mpv). It handles unsync subs automatically. Select to 'Sync to another subtitle' then select the sub_english_temp..srt (It should be in the last order and the format is .srt).
 
 ## Requirements
 - Python 3.12+
