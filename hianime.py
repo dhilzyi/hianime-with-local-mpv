@@ -140,7 +140,7 @@ def get_all_episodes(series_url):
         episodes_html = response.json().get('html', ''); soup = BeautifulSoup(episodes_html, 'lxml')
         episodes = [{'num': i + 1, 'english_title': html.unescape(link.get('title', 'No Title')), 'japanese_title': html.unescape(ep_name_div['data-jname']) if (ep_name_div := link.select_one('.ep-name.e-dynamic-name')) and ep_name_div.has_attr('data-jname') else None, 'url': BASE_URL + link['href'], 'id': link['data-id']} for i, link in enumerate(soup.find_all('a', class_='ssl-item'))]
         print(f"--> Found and cached {len(episodes)} episodes."); CACHE['episodes'][series_url] = episodes; return episodes
-    except Exception as e: print(f"⚠️ Lightweight episode extractor failed: {e}"); return []
+    except Exception as e: print(f" Fetching episode extractor failed: {e}"); return []
 def get_episode_servers(episode_id):
     if episode_id in CACHE['servers']: return CACHE['servers'][episode_id]
     try:
@@ -168,7 +168,7 @@ def launch_and_monitor_mpv(mpv_command_list):
                 if time.time() - start_time > 20:
                     print("--> ❕ Timed out. Terminating hung process."); process.terminate(); return False
             print("--> ❕ MPV exited prematurely."); return False
-    except Exception as e: print(f"--> ⚠️ An unexpected error occurred in the watchdog: {e}"); return False
+    except Exception as e: print(f"--> An unexpected error occurred in the watchdog: {e}"); return False
 
 # --- JIMAKU MODULE/API ---
 def search_jimaku(query):
@@ -221,16 +221,31 @@ def download_and_convert_sub(url, name="sub"):
     srt_path = TEMP_DIR / f"{name}_{today.year}-{today.month}-{today.day}_{today.hour}-{today.minute}-{today.second}.srt"
 
     # download subtitle
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        with open(vtt_path, "wb") as f:
-            for chunk in r.iter_content(8192):
-                f.write(chunk)
-
+    try:
+        print(f"\n--> [FFmpeg] Downloading english subs '{url}' to convert...")
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(vtt_path, "wb") as f:
+                for chunk in r.iter_content(8192):
+                    f.write(chunk)
+    except Exception as e:
+        print(f"--> [FFmpeg] Downloading failed as exception ({e})")
+        
     # convert to srt with ffmpeg
-    subprocess.run([
-        "ffmpeg", "-loglevel", "error", "-i", str(vtt_path), str(srt_path)
-    ], check=True)
+    try:
+        if Path(vtt_path).is_file():
+            print(f"--> [FFmpeg] Converting the english.vtt to .srt as a temp...")
+            subprocess.run([
+                "ffmpeg", "-loglevel", "error", "-i", str(vtt_path), str(srt_path)
+            ], check=True)
+        else:
+            print(f"--> [FFmpeg] Skipping the convert. No subs to be found.")
+    except FileNotFoundError:
+        print("--> [FFmpeg] Skipping convert. 'ffmpeg' not found on system.")
+    except subprocess.CalledProcessError as e:
+        print(f"--> [FFmpeg] Converting failed (ffmpeg error: {e})")
+    except Exception as e:
+        print(f"--> [FFmpeg] Unexpected exception occurred: {e}")
 
     return srt_path
 

@@ -1,6 +1,5 @@
 # Test and backup files
-hianime_test.py  # Or "hianime _test.py" if space is literal
-hianime _test.py
+hianime_test.py
 hianime_ori.py
 test.py
 
