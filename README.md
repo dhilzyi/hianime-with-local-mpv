@@ -28,9 +28,10 @@ Pair this tool with these for an even better experience:
 ## Requirements
 - Python 3.12+
 - MPV player (install via [official site](https://mpv.io/)) and add to PATH. Test with `mpv --version`
+- yt-dlp (download the latest release [here](https://github.com/yt-dlp/yt-dlp/releases) place `yt-dlp.exe` in the same directory as MPV or another PATH directory)
 - FFmpeg (install via [official site](https://ffmpeg.org/download.html) or with `winget install ffmpeg`) and add to PATH. Test with `ffmpeg -version`
 - Key libraries (via `requirements.txt`): requests (for APIs), beautifulsoup4 (for parsing), etc. Full list in `requirements.txt`
-- yt-dlp (download the latest release [here](https://github.com/yt-dlp/yt-dlp/releases) place `yt-dlp.exe` in the same directory as MPV or another PATH directory)
+
   
 ## Installation
 1. `git clone https://github.com/dhilzyi/hianime-with-local-mpv.git`
@@ -53,8 +54,7 @@ Use `python hianime.py --command` as you can print the raw mpv command for debug
 - Jimaku API issues: Get your key from jimaku.cc and add it to environment variables (e.g. JIMAKU_API_KEY=yourkey) or paste directly in the code.
 - MPV not launching? Ensure it's in your PATH. Test with `mpv --version`
 - If subtitle are not converting. Ensure FFmpeg in your PATH. Test with `ffmpeg -version` or if it's not installed, install first.
-- yt-dlp not detected? Run `yt-dlp --version` to check.  
-  If not found, make sure the folder containing `yt-dlp.exe` is in your PATH (you can also put it in the same folder as MPV).
+- yt-dlp not detected? Run `yt-dlp --version` to check. If not found, make sure the folder containing `yt-dlp.exe` is in your PATH (you can also put it in the same folder as MPV).
   
 ## Contributing
 Pull requests welcome! Fork the repo, create a branch, and submit.
