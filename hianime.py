@@ -238,17 +238,23 @@ def download_and_convert_sub(url, name="sub"):
             subprocess.run([
                 "ffmpeg", "-loglevel", "error", "-i", str(vtt_path), str(srt_path)
             ], check=True)
+            print(f"--> [FFmpeg] Succesfully converted to {srt_path}")
+            return srt_path
         else:
             print(f"--> [FFmpeg] Skipping the convert. No subs to be found.")
+            return None
     except FileNotFoundError:
         print("--> [FFmpeg] Skipping convert. 'ffmpeg' not found on system.")
+        return None 
     except subprocess.CalledProcessError as e:
         print(f"--> [FFmpeg] Converting failed (ffmpeg error: {e})")
+        if srt_path.exists():
+            srt_path.unlink()
+        return None
     except Exception as e:
         print(f"--> [FFmpeg] Unexpected exception occurred: {e}")
-
-    return srt_path
-
+        return None
+        
 # --- Deleating subs files in temp folder ---
 def cleanup_old_subs():
     now = time.time()
@@ -387,7 +393,7 @@ def main():
                     # Load Jimaku (Japanese) subs FIRST so they become the earlier tracks (default display)
                     has_jimaku = False
                     if JIMAKU_API_KEY and config.get("enable_jimaku", True):
-                        print("--> [Jimaku] Enabled. Proceeding...")
+                        print("\n--> [Jimaku] Enabled. Proceeding...")
                         search_query = metadata['japanese_title'] or metadata['english_title']
                         jimaku_results = search_jimaku(search_query)
                         
@@ -448,7 +454,11 @@ def main():
                     for sub in stream_subs:
                         if sub.get('file') and 'english' in sub.get('label', '').lower():
                             srt_converted = download_and_convert_sub(sub.get('file'))
-                            mpv_command.append(f"--sub-file={srt_converted}")
+                            if srt_converted:
+                                mpv_command.append(f"--sub-file={srt_converted}")
+                            else:   
+                                mpv_command.append(f"--sub-file={sub.get('file')}")
+
                             loaded_subs.append(f"{sub.get('label')} (Stream)")
                 
                     if loaded_subs:
