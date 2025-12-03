@@ -94,27 +94,77 @@ def decrypt_data(key, encrypted_str):
 
 def extract_megacloud(iframe_url):
     try:
-        user_agent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
-        parsed_url = urlparse(iframe_url); default_domain = f"{parsed_url.scheme}://{parsed_url.netloc}/"
-        extractor_headers = {"Accept": "*/*", "X-Requested-With": "XMLHttpRequest", "Referer": iframe_url, "User-Agent": user_agent}
-        response_text = SESSION.get(iframe_url, headers={"Referer": default_domain, "User-Agent": user_agent}, timeout=REQUEST_TIMEOUT).text
-        soup = BeautifulSoup(response_text, 'html.parser'); video_tag = soup.select_one('#megacloud-player')
+        # Use a standard PC User-Agent (Matches the logs better than Android)
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        
+        parsed_url = urlparse(iframe_url)
+        # DYNAMIC REFERER: This captures 'megacloud.blog' or 'megacloud.tv' automatically
+        domain = parsed_url.netloc 
+        custom_referer = f"{parsed_url.scheme}://{domain}/"
+
+        extractor_headers = {
+            "Accept": "*/*", 
+            "X-Requested-With": "XMLHttpRequest", 
+            "Referer": custom_referer, 
+            "User-Agent": user_agent,
+            "Origin": custom_referer[:-1] # Remove trailing slash for Origin
+        }
+        
+        print(f"--> [Extractor] Fetching embed from: {custom_referer}")
+        response = SESSION.get(iframe_url, headers=extractor_headers, timeout=REQUEST_TIMEOUT)
+        response_text = response.text
+        
+        soup = BeautifulSoup(response_text, 'html.parser')
+        video_tag = soup.select_one('#megacloud-player')
+        
         if not video_tag: raise ValueError("Could not find '#megacloud-player' tag.")
-        file_id = video_tag['data-id']; match = re.search(r'\b[a-zA-Z0-9]{48}\b', response_text)
+            
+        file_id = video_tag['data-id']
+        match = re.search(r'\b[a-zA-Z0-9]{48}\b', response_text)
         if not match: raise ValueError("Could not find nonce in HTML.")
-        nonce = match.group(); mega_key, vid_key = get_keys_from_repo()
-        sources_url = f'{default_domain}/embed-2/v3/e-1/getSources?id={file_id}&_k={nonce}'
-        response_json = SESSION.get(sources_url, headers=extractor_headers, timeout=REQUEST_TIMEOUT).json()
-        encrypted_str, tracks = response_json.get('sources'), response_json.get('tracks', [])
+        nonce = match.group()
+        
+        mega_key, vid_key = get_keys_from_repo()
+        
+        sources_url = f'{custom_referer}embed-2/v3/e-1/getSources?id={file_id}&_k={nonce}'
+        
+        # API Headers must match the Embed Headers
+        api_headers = extractor_headers.copy()
+        api_headers["Accept"] = "application/json"
+        
+        response_json = SESSION.get(sources_url, headers=api_headers, timeout=REQUEST_TIMEOUT).json()
+        
+        encrypted_str = response_json.get('sources')
+        tracks = response_json.get('tracks', [])
+        
         if isinstance(encrypted_str, str) and encrypted_str:
-            try: decrypted_json_str = decrypt_data(mega_key, encrypted_str).decode()
-            except: decrypted_json_str = decrypt_data(vid_key, encrypted_str).decode()
-            sources = json.loads(decrypted_json_str); video_url = sources[0]['file']
-            return {"url": video_url, "user_agent": user_agent, "referer": default_domain, "tracks": tracks}
+            try: 
+                decrypted_json_str = decrypt_data(mega_key, encrypted_str).decode()
+            except: 
+                decrypted_json_str = decrypt_data(vid_key, encrypted_str).decode()
+                
+            sources = json.loads(decrypted_json_str)
+            video_url = sources[0]['file']
+            
+            return {
+                "url": video_url, 
+                "user_agent": user_agent, 
+                "referer": custom_referer, # PASS THE DYNAMIC REFERER
+                "tracks": tracks
+            }
         elif isinstance(encrypted_str, list) and encrypted_str:
-             return {"url": encrypted_str[0].get('file'), "user_agent": user_agent, "referer": default_domain, "tracks": tracks}
-        else: raise ValueError("Server did not return a valid 'sources' payload.")
-    except Exception: return None
+             return {
+                 "url": encrypted_str[0].get('file'), 
+                 "user_agent": user_agent, 
+                 "referer": custom_referer, 
+                 "tracks": tracks
+             }
+        else: 
+            raise ValueError("Server did not return a valid 'sources' payload.")
+            
+    except Exception as e: 
+        print(f"--> [Extractor Error] {e}")
+        return None
 
 def get_series_metadata(series_url, history):
     if series_url in CACHE['titles']: return CACHE['titles'][series_url], history
@@ -188,10 +238,30 @@ def get_jimaku_files(entry_id):
         return response.json()
     except Exception: return []
 def extract_episode_num(filename):
-    patterns = [re.compile(r"[._\-\s](\d{1,3})[._\-\s]"), re.compile(r"EP(\d{1,3})", re.I), re.compile(r"E(\d{1,3})", re.I), re.compile(r"\[(\d{1,3})\]")]
+    patterns = [
+        # 1. Look for explicit hash syntax (e.g., "Show #13") - Priorities this!
+        re.compile(r"#(\d{1,3})"), 
+        
+        # 2. Look for explicit Episode notation (EP01, E01)
+        re.compile(r"EP?(\d{1,3})", re.I), 
+        
+        # 3. Look for " - 01 " format (Specific to AnimeKaizoku/HorribleSubs style)
+        # We enforce spaces around the hyphen to avoid matching dates like 2013-02-14
+        re.compile(r"\s-\s(\d{1,3})(?:v\d)?(?:\s|\[|\.)"), 
+        
+        # 4. Look for [01] at the start or inside brackets
+        re.compile(r"\[(\d{1,3})\]"),
+        
+        # 5. Last resort: The generic spacer pattern (Moved to bottom)
+        # Note: This is risky because of dates, but kept as a fallback.
+        re.compile(r"[._\s](\d{1,3})[._\s]") 
+    ]
+    
     for pat in patterns:
         m = pat.search(filename)
-        if m: return int(m.group(1))
+        if m: 
+            return int(m.group(1))
+            
     return 0
 def download_jimaku_sub(file_data, series_title):
     url = file_data['url']
@@ -215,10 +285,10 @@ def download_jimaku_sub(file_data, series_title):
     except Exception as e: print(f"--> [Jimaku] Download failed: {e}"); return None
     
 # --- Downloading subs english.vtt from megacloud and Converting to srt as a temp ---
-def download_and_convert_sub(url, name="sub"):
+def download_and_convert_sub(url, index, name="sub"):
     today = datetime.today()
-    vtt_path = TEMP_DIR / f"{name}_{today.year}-{today.month}-{today.day}_{today.hour}-{today.minute}-{today.second}.vtt"
-    srt_path = TEMP_DIR / f"{name}_{today.year}-{today.month}-{today.day}_{today.hour}-{today.minute}-{today.second}.srt"
+    vtt_path = TEMP_DIR / f"{name}_{today.year}-{today.month}-{today.day}_{today.hour}-{today.minute}-{today.second}({index}).vtt"
+    srt_path = TEMP_DIR / f"{name}_{today.year}-{today.month}-{today.day}_{today.hour}-{today.minute}-{today.second}({index}).srt"
 
     # download subtitle
     try:
@@ -387,7 +457,37 @@ def main():
                     stream_data['server_name'] = server['name']
                     ep_title = chosen_ep['japanese_title'] or chosen_ep['english_title']
                     display_title = (f"[Ep. {chosen_ep['num']}] {ep_title} ({stream_data['server_name']})")
-                    mpv_command = ['mpv', stream_data["url"], f'--referrer={stream_data["referer"]}', f'--user-agent={stream_data["user_agent"]}', '--ytdl-format=bestvideo+bestaudio/best', f'--title={display_title}', '--script-opts=osc-title=${title}']
+                    
+                    # 1. Prepare Cookies
+                    # Convert requests.Session cookies to a string format "key=value; key2=value2"
+                    cookies_dict = SESSION.cookies.get_dict()
+                    cookie_string = "; ".join([f"{k}={v}" for k, v in cookies_dict.items()])
+                    
+                    # 2. Get the Dynamic Referer we extracted
+                    ref = stream_data["referer"] # e.g., https://megacloud.blog/
+                    
+                    # 3. Construct Headers for MPV
+                    # We add Sec-Fetch headers to mimic the browser logs you sent
+                    header_fields = [
+                        f"Referer: {ref}",
+                        f"Origin: {ref.rstrip('/')}",
+                        f"Cookie: {cookie_string}",
+                        "Sec-Fetch-Dest: empty",
+                        "Sec-Fetch-Mode: cors",
+                        "Sec-Fetch-Site: cross-site"
+                    ]
+                    
+                    mpv_command = [
+                        'mpv', 
+                        stream_data["url"], 
+                        f'--user-agent={stream_data["user_agent"]}', 
+                        '--ytdl-format=bestvideo+bestaudio/best', 
+                        f'--title={display_title}', 
+                        '--script-opts=osc-title=${title}',
+                        '--tls-verify=no',
+                        f'--http-header-fields={",".join(header_fields)}'
+                    ]
+                    
                     loaded_subs = []
                     
                     # Load Jimaku (Japanese) subs FIRST so they become the earlier tracks (default display)
@@ -428,13 +528,17 @@ def main():
                                 files = get_jimaku_files(chosen_jimaku_anime['id'])
                                     
                                 files_to_download = [f for f in files if extract_episode_num(f['name']) == chosen_ep['num']]
+                                
+                                # Get specific formats
                                 ass_files = [f for f in files_to_download if f['name'].lower().endswith('.ass')]
                                 srt_files = [f for f in files_to_download if f['name'].lower().endswith('.srt')]
-                                preferred_files = ass_files if ass_files else srt_files
                                 
-                                if preferred_files:
-                                    print(f"--> [Jimaku] Found {len(preferred_files)} preferred subtitle file(s) for episode {chosen_ep['num']} (preferring .ass).")
-                                    for file_data in preferred_files:
+                                # Combine them (ASS first, then SRT)
+                                target_files = ass_files + srt_files
+                                
+                                if target_files:
+                                    print(f"--> [Jimaku] Found {len(target_files)} subtitle file(s) for episode {chosen_ep['num']}.")
+                                    for file_data in target_files:
                                         local_path = download_jimaku_sub(file_data, chosen_jimaku_anime['name'])
                                         if local_path:
                                             mpv_command.append(f'--sub-file={local_path}')
@@ -451,22 +555,26 @@ def main():
                     
                     # Load stream (English) subs AFTER Jimaku so Japanese is default
                     stream_subs = [track for track in stream_data.get("tracks", []) if track.get("kind") != "thumbnails"]
+                    counter = 1
                     for sub in stream_subs:
                         if sub.get('file') and 'english' in sub.get('label', '').lower():
-                            srt_converted = download_and_convert_sub(sub.get('file'))
+                            srt_converted = download_and_convert_sub(sub.get('file'), counter)
                             if srt_converted:
                                 mpv_command.append(f"--sub-file={srt_converted}")
                             else:   
                                 mpv_command.append(f"--sub-file={sub.get('file')}")
 
                             loaded_subs.append(f"{sub.get('label')} (Stream)")
+                            counter += 1
                 
                     if loaded_subs:
                         print(f"\n--> Loading subtitles: {', '.join(loaded_subs)}")
                     if args.command:
                         print(" ".join(mpv_command))
+                        break
                     if launch_and_monitor_mpv(mpv_command):
-                        stream_found = True; break
+                        stream_found = True
+                        break
                     else:
                         print(f"--> Stream from '{server['name']}' failed viability test. Trying next server...")
             
