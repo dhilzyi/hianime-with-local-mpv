@@ -1,3 +1,14 @@
+# Archive Notice
+> [!IMPORTANT]  
+> **This project is archived as of February 23, 2026.**  
+> No further updates or maintenance.
+
+I'm now developing a completely new version in Go. with better architecture, more features, and improved UX/UI.
+
+→ Check out the successor project:  
+**[hianime-cli](https://github.com/dhilzyi/hianime-cli)**
+
+
 # Hianime with Local MPV
 ![Python](https://img.shields.io/badge/python-3.12-green)
 
